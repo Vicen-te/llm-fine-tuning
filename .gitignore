@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtualenvs
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Hugging Face / model artifacts
+checkpoints/
+outputs/
+artifacts/
+runs/
+wandb/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+.cache/
+hf_cache/
+
+# Datasets (we re-generate from script)
+data/processed/
+data/raw/
+data/*.jsonl
+!data/.gitkeep
+
+# Evaluation outputs (re-generated)
+evals/results/
+evals/predictions/
+!evals/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Secrets
+.env
+.env.local
+*.key
+*.pem
