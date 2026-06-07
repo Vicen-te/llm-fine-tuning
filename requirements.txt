@@ -2,3 +2,5 @@ rich>=13.0
 python-dotenv>=1.0
 datasets>=3.0
 pytest>=8.0
+sqlglot>=25.0
+sacrebleu>=2.4
