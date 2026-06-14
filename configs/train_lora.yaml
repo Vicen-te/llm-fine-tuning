@@ -1,0 +1,52 @@
+# LoRA SFT config (fp16 / bf16, no quantization).
+# Pass to scripts/train.py with: --config configs/train_lora.yaml
+#
+# Hardware target: single ~12 GB GPU (RTX 3060 / 4070 / A4000). On 8 GB you
+# should switch to configs/train_qlora.yaml (QLoRA, 4-bit base weights).
+
+model:
+  base_model: Qwen/Qwen3.5-2B
+  attn_impl: sdpa             # eager | sdpa | flash_attention_2
+  trust_remote_code: false
+  dtype: bfloat16             # bf16 if Ampere+, else fp16
+  use_4bit: false
+
+data:
+  train_file: data/processed/train.jsonl
+  eval_file: data/processed/eval.jsonl
+  max_seq_length: 1024        # 99% of our prompts fit easily
+  enable_thinking: false      # SQL output is the raw query, no <think>
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # Qwen3.5-2B is MoE: the MLP *_proj live inside the experts, so an explicit
+  # q/k/v/o/gate/up/down list would not resolve. all-linear lets peft discover
+  # every linear layer itself. Validated by scripts/preflight.py before a run.
+  target_modules: all-linear
+  bias: none
+  task_type: CAUSAL_LM
+
+train:
+  output_dir: outputs/qwen3.5-2b-sql-lora
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4   # effective batch = 16
+  gradient_checkpointing: true
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  optim: adamw_torch
+  max_grad_norm: 1.0
+  logging_steps: 5
+  eval_strategy: epoch
+  save_strategy: epoch
+  save_total_limit: 2
+  seed: 42
+  bf16: true
+  fp16: false
+  report_to: tensorboard
+  packing: false                  # SFTTrainer packing

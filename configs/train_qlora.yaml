@@ -1,0 +1,56 @@
+# QLoRA SFT config — base model loaded in 4-bit NF4 via bitsandbytes,
+# LoRA adapters trained in fp16. Fits comfortably in 6–8 GB VRAM.
+# Pass to scripts/train.py with: --config configs/train_qlora.yaml
+
+model:
+  base_model: Qwen/Qwen3.5-2B
+  attn_impl: sdpa
+  trust_remote_code: false
+  dtype: bfloat16
+  use_4bit: true               # <-- the QLoRA switch
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: bfloat16
+
+data:
+  train_file: data/processed/train.jsonl
+  eval_file: data/processed/eval.jsonl
+  max_seq_length: 1024
+  enable_thinking: false
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # Qwen3.5-2B is MoE: target all linear layers (peft discovers them) rather
+  # than an explicit q/k/v/o/gate/up/down list. See configs/train_lora.yaml.
+  target_modules: all-linear
+  bias: none
+  task_type: CAUSAL_LM
+
+train:
+  # Same path as configs/train_lora.yaml so `make merge` / `make evaluate` work
+  # without overriding ADAPTER_DIR. Pick ONE regime per run; running both back to
+  # back overwrites the earlier adapter. If you want to keep both side by side,
+  # override here (e.g. outputs/qwen3.5-2b-sql-qlora) and pass ADAPTER_DIR= to make.
+  output_dir: outputs/qwen3.5-2b-sql-lora
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  optim: paged_adamw_8bit       # QLoRA-style paged optimizer
+  max_grad_norm: 0.3
+  logging_steps: 5
+  eval_strategy: epoch
+  save_strategy: epoch
+  save_total_limit: 2
+  seed: 42
+  bf16: true
+  fp16: false
+  report_to: tensorboard
+  packing: false
