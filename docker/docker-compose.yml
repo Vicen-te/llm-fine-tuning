@@ -1,0 +1,75 @@
+# Two services:
+#
+# 1) vllm     — the official vllm/vllm-openai image, serving the merged model
+#               on port 8000 (OpenAI-compatible API).
+# 2) api      — our FastAPI wrapper (scripts/serve_vllm.py) on port 8080,
+#               exposing /sql and proxying /v1/chat/completions.
+#
+# Bring up with:
+#   docker compose up --build
+#
+# Test:
+#   curl http://localhost:8080/healthz
+#   curl -X POST http://localhost:8080/sql \
+#       -H "Content-Type: application/json" \
+#       -d '{"schema":"CREATE TABLE t (id INT, name TEXT)","question":"How many rows?"}'
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: sql-ft-vllm
+    runtime: nvidia
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - VLLM_NO_USAGE_STATS=1
+    # MODEL_ID can be a local path mounted into the container, or an HF id.
+    # Default is the Hub id; override with: MODEL_ID=/models/my-model in .env
+    command: >
+      --model ${MODEL_ID:-YOUR_HF_USERNAME/qwen3.5-2b-sql}
+      --served-model-name sql-ft
+      --max-model-len 4096
+      --gpu-memory-utilization 0.85
+      --dtype bfloat16
+      --enforce-eager
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      # Persist HF cache so we don't redownload on every restart.
+      - hf-cache:/root/.cache/huggingface
+      # Mount a local model dir if you want to serve `outputs/...-merged` without
+      # pushing to the Hub first. Set MODEL_DIR=../outputs/qwen3.5-2b-sql-merged
+      # in your .env and the line below picks it up. Default mount is harmless.
+      - ${MODEL_DIR:-../outputs}:/models:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s   # generous: the engine needs time to load weights
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: sql-ft-api
+    environment:
+      - VLLM_BASE_URL=http://vllm:8000
+      - VLLM_MODEL=sql-ft
+      - VLLM_TIMEOUT=60
+    ports:
+      - "8080:8080"
+    depends_on:
+      vllm:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
