@@ -23,8 +23,19 @@ Stack notes (transformers 5 / trl 1.x):
 
 from __future__ import annotations
 
-import argparse
+import os
 import sys
+
+# On Windows, trl reads its bundled .jinja chat templates with the locale
+# default encoding (cp1252), which chokes on their UTF-8 bytes and makes
+# `import trl` raise UnicodeDecodeError. Re-exec under UTF-8 mode so training
+# works without the caller having to set PYTHONUTF8=1 first.
+if os.name == "nt" and not sys.flags.utf8_mode:
+    import subprocess
+
+    raise SystemExit(subprocess.run([sys.executable, "-X", "utf8", *sys.argv]).returncode)
+
+import argparse
 from pathlib import Path
 from typing import Any
 
