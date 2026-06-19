@@ -1,3 +1,7 @@
+# PyTorch CUDA wheels: cu130 (CUDA 13.0) works on a CUDA 13.3 driver (backward
+# compatible). For a CPU-only install swap to https://download.pytorch.org/whl/cpu .
+--extra-index-url https://download.pytorch.org/whl/cu130
+
 rich>=13.0
 python-dotenv>=1.0
 datasets>=3.0
@@ -5,6 +9,7 @@ pytest>=8.0
 sqlglot>=25.0
 sacrebleu>=2.4
 httpx>=0.27
+torch>=2.12
 transformers>=5.0
 peft>=0.15
 trl>=1.5
