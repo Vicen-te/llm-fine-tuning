@@ -1,0 +1,63 @@
+# Lint + tests on every push / PR.
+#
+# We deliberately skip the heavy ML deps here:
+# - bitsandbytes needs CUDA; GitHub-hosted runners are CPU-only.
+# - a full torch + transformers install would blow the public-repo free
+#   minutes budget on every push.
+#
+# Instead, CI verifies the CPU-safe parts of the codebase: the SQL evaluation
+# module, prompt construction, and JSONL I/O - the pieces where a regression
+# would silently corrupt training data or eval results.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install "ruff>=0.7"
+      - name: Lint
+        run: ruff check src tests scripts
+      - name: Format check
+        run: ruff format --check src tests scripts
+
+  test:
+    name: pytest (CPU-only)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install CPU-only test deps
+        run: |
+          python -m pip install --upgrade pip
+          # Only the deps the CPU-safe tests need: sql_ft.eval_sql, prompts, data.
+          pip install \
+            "sqlglot>=25.0" \
+            "sacrebleu>=2.4" \
+            "datasets>=3.0" \
+            "pyyaml>=6.0" \
+            "rich>=13.0" \
+            "python-dotenv>=1.0" \
+            "pytest>=8.0"
+      - name: Run tests
+        run: pytest tests/ -v

@@ -14,6 +14,25 @@ keywords = ["llm", "fine-tuning", "lora", "qlora", "text-to-sql", "vllm", "qwen"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["outputs", "evals/results", "data/processed", "wandb", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+ignore = [
+    "E501",   # line length handled by formatter
+    "B008",   # function calls in argument defaults are fine for Pydantic Field()
+    "RUF012", # mutable class defaults
+    "RUF001", # ambiguous unicode chars in identifiers (we don't have any in identifiers)
+    "RUF002", # ambiguous unicode chars in docstrings (we use em-dashes deliberately)
+    "RUF003", # ambiguous unicode chars in comments (same)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402", "T201"]  # sys.path.insert before imports + print() is fine
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
