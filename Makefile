@@ -24,7 +24,7 @@ help:
 	@echo "  train           LoRA SFT in bf16  (configs/train_lora.yaml)"
 	@echo "  train-qlora     QLoRA SFT in 4-bit (configs/train_qlora.yaml)"
 	@echo "  merge           Merge adapter into base model -> $(MERGED_DIR)"
-	@echo "  evaluate        Run base vs ft vs ft-4bit on 50-example benchmark"
+	@echo "  evaluate        Run base vs ft vs ft-4bit on 200-example benchmark"
 	@echo "  quantize        Save NF4 4-bit copy + size/latency comparison"
 	@echo ""
 	@echo "Publish:"
@@ -48,13 +48,13 @@ data:
 	$(PY) scripts/prepare_dataset.py \
 	    --source b-mc2/sql-create-context \
 	    --out-dir data/processed \
-	    --n-train 300 --n-eval 50 --seed 42
+	    --n-train 300 --n-eval 200 --seed 42
 
 train:
-	$(PY) scripts/train.py --config configs/train_lora.yaml
+	$(PY) -X utf8 scripts/train.py --config configs/train_lora.yaml
 
 train-qlora:
-	$(PY) scripts/train.py --config configs/train_qlora.yaml
+	$(PY) -X utf8 scripts/train.py --config configs/train_qlora.yaml
 
 merge:
 	$(PY) scripts/merge_adapter.py \
@@ -109,5 +109,4 @@ fmt:
 	$(PY) -m ruff format src tests scripts
 
 clean:
-	rm -rf outputs/ evals/results/ evals/predictions/ data/processed/ .ruff_cache/
-	find . -type d -name __pycache__ -exec rm -rf {} +
+	$(PY) -c "import shutil, pathlib; [shutil.rmtree(d, ignore_errors=True) for d in ('outputs', 'evals/results', 'evals/predictions', 'data/processed', '.ruff_cache')]; [shutil.rmtree(c, ignore_errors=True) for c in pathlib.Path('.').rglob('__pycache__')]"
