@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
@@ -28,6 +29,7 @@ from sql_ft.data import read_jsonl
 from sql_ft.eval_sql import aggregate, clean_sql_output
 from sql_ft.inference import GenConfig, HFGenerator
 
+load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
 
 

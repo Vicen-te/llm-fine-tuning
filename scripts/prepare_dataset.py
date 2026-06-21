@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 from datasets import load_dataset
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
@@ -35,6 +36,7 @@ from rich.table import Table
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sql_ft.data import write_jsonl
 
+load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
 
 

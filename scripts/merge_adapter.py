@@ -20,10 +20,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
 
 
