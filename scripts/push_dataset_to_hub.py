@@ -28,7 +28,6 @@ DATASET_CARD = """\
 ---
 license: cc-by-4.0
 task_categories:
-- text2sql
 - text-generation
 language:
 - en
