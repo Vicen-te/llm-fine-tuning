@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
@@ -30,6 +31,7 @@ from sql_ft.data import read_jsonl, write_jsonl
 from sql_ft.eval_sql import aggregate, clean_sql_output
 from sql_ft.inference import GenConfig, HFGenerator
 
+load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
 
 
@@ -70,19 +72,15 @@ def parse_args() -> argparse.Namespace:
 def _build_model(spec: ModelSpec, dtype: str = "bfloat16") -> tuple[Any, Any]:
     """Return (model, tokenizer). Releases nothing — caller frees."""
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(spec.model_id, use_fast=True)
     kwargs: dict[str, Any] = {"device_map": "auto"}
-    if spec.load_in_4bit:
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
-    else:
+    if not spec.load_in_4bit:
         kwargs["dtype"] = {"bfloat16": torch.bfloat16, "float16": torch.float16}[dtype]
+    # else: the NF4 model (saved by scripts/quantize_4bit.py) already carries its
+    # quantization_config in config.json, which transformers re-applies on load —
+    # passing a fresh BitsAndBytesConfig here is redundant and triggers a warning.
     model = AutoModelForCausalLM.from_pretrained(spec.model_id, **kwargs)
     return model, tok
 
