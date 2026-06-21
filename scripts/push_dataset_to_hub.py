@@ -42,9 +42,9 @@ tags:
 pretty_name: SQL Create Context (mini)
 ---
 
-# SQL Create Context (mini) — 300 train / 50 eval
+# SQL Create Context (mini) — 300 train / 200 eval
 
-A curated, deduplicated 350-row split of
+A curated, deduplicated 500-row split of
 [`b-mc2/sql-create-context`](https://huggingface.co/datasets/b-mc2/sql-create-context)
 used to LoRA-fine-tune Qwen3.5-2B for Text-to-SQL.
 
@@ -63,7 +63,7 @@ Each row has three string fields:
 | split | rows |
 |-------|------|
 | train | 300  |
-| eval  | 50   |
+| eval  | 200  |
 
 ## Provenance
 
@@ -72,7 +72,7 @@ with `seed=42` from the source train split. No examples leak between splits.
 
 ## Intended use
 
-This split is intentionally small (350 rows) for parameter-efficient
+This split is intentionally small (500 rows) for parameter-efficient
 fine-tuning on a single GPU. It is not a capability benchmark; use the
 upstream Spider/BIRD datasets for that.
 
