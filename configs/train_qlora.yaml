@@ -41,7 +41,7 @@ train:
   gradient_checkpointing: true
   learning_rate: 2.0e-4
   lr_scheduler_type: cosine
-  warmup_ratio: 0.05
+  warmup_steps: 3                  # ~5% of ~57 total steps (warmup_ratio is deprecated)
   weight_decay: 0.0
   optim: paged_adamw_8bit       # QLoRA-style paged optimizer
   max_grad_norm: 0.3
@@ -54,3 +54,4 @@ train:
   fp16: false
   report_to: tensorboard
   packing: false
+  loss_type: chunked_nll          # TRL 1.7 default; same math, lower memory than nll

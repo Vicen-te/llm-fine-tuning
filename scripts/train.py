@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from rich.console import Console
 
 # Make the package importable when running from repo root.
@@ -47,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sql_ft.data import build_sft_dataset, read_jsonl
 
+load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
 
 
@@ -158,7 +160,7 @@ def main() -> int:
         gradient_checkpointing=train_cfg["gradient_checkpointing"],
         learning_rate=float(train_cfg["learning_rate"]),
         lr_scheduler_type=train_cfg["lr_scheduler_type"],
-        warmup_ratio=train_cfg["warmup_ratio"],
+        warmup_steps=train_cfg["warmup_steps"],
         weight_decay=train_cfg["weight_decay"],
         optim=train_cfg["optim"],
         max_grad_norm=train_cfg["max_grad_norm"],
@@ -174,6 +176,7 @@ def main() -> int:
         max_length=data_cfg["max_seq_length"],
         packing=train_cfg.get("packing", False),
         dataset_text_field="text",
+        loss_type=train_cfg.get("loss_type", "chunked_nll"),
     )
 
     trainer = SFTTrainer(
