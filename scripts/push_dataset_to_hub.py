@@ -14,7 +14,7 @@ from pathlib import Path
 
 from datasets import Dataset, DatasetDict
 from dotenv import load_dotenv
-from huggingface_hub import HfApi
+from huggingface_hub import DatasetCard, HfApi
 from rich.console import Console
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -24,24 +24,7 @@ console = Console()
 load_dotenv()
 
 
-DATASET_CARD = """\
----
-license: cc-by-4.0
-task_categories:
-- text-generation
-- table-question-answering
-language:
-- en
-size_categories:
-- n<1K
-tags:
-- sql
-- text-to-sql
-- fine-tuning
-- qwen3.5
-pretty_name: SQL Create Context (mini)
----
-
+DATASET_BODY = """\
 # SQL Create Context (mini) — 300 train / 200 eval
 
 A curated, deduplicated 500-row split of
@@ -113,17 +96,19 @@ def main() -> int:
     )
     dd.push_to_hub(args.repo_id, token=token, private=args.private)
 
-    # Upload the dataset card last so it overrides any auto-generated one.
-    card_path = Path("data/processed/README.md")
-    card_path.parent.mkdir(parents=True, exist_ok=True)
-    card_path.write_text(DATASET_CARD, encoding="utf-8")
-    api.upload_file(
-        path_or_fileobj=str(card_path),
-        path_in_repo="README.md",
-        repo_id=args.repo_id,
-        repo_type="dataset",
-        token=token,
-    )
+    # Merge our metadata + prose into the card that push_to_hub auto-generated,
+    # so its configs/dataset_info block (which powers the Dataset Viewer and the
+    # split stats) survives instead of being overwritten by a hand-written card.
+    card = DatasetCard.load(args.repo_id, repo_type="dataset", token=token)
+    card.data.license = "cc-by-4.0"
+    card.data.language = ["en"]
+    card.data.size_categories = ["n<1K"]
+    card.data.task_categories = ["text-generation", "table-question-answering"]
+    card.data.tags = ["sql", "text-to-sql", "fine-tuning", "qwen3.5"]
+    card.data.pretty_name = "SQL Create Context (mini)"
+    card.text = DATASET_BODY
+    card.push_to_hub(args.repo_id, repo_type="dataset", token=token)
+
     console.print(f"[green]Pushed to https://huggingface.co/datasets/{args.repo_id}[/green]")
     return 0
 
