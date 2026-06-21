@@ -187,7 +187,11 @@ def main() -> int:
     card_template = ADAPTER_CARD if args.kind == "adapter" else MERGED_CARD
     dataset_id = args.dataset_id or f"{args.repo_id.split('/')[0]}/sql-create-context-mini"
     card = card_template.format(repo_id=args.repo_id, dataset_id=dataset_id)
-    (model_dir / "README.md").write_text(card, encoding="utf-8")
+    # Normalize to LF + UTF-8 so the YAML front matter parses on the Hub; the
+    # card string inherits this module's CRLF endings on Windows, which a default
+    # text-mode write would turn into \r\r\n and break the parser.
+    card = card.replace("\r\n", "\n").replace("\r", "\n")
+    (model_dir / "README.md").write_text(card, encoding="utf-8", newline="\n")
 
     # Attach the eval summary if it exists so the headline metrics live on
     # the model page itself, not just in the repo.

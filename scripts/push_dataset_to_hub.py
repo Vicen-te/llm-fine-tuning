@@ -107,7 +107,17 @@ def main() -> int:
     card.data.tags = ["sql", "text-to-sql", "fine-tuning", "qwen3.5"]
     card.data.pretty_name = "SQL Create Context (mini)"
     card.text = DATASET_BODY
-    card.push_to_hub(args.repo_id, repo_type="dataset", token=token)
+    # Upload as UTF-8 bytes with LF newlines. card.push_to_hub() writes the card
+    # through a Windows text-mode file, turning the CRLF this module's string
+    # literals carry into \r\r\n, which breaks HF's YAML front-matter parser.
+    content = card.content.replace("\r\n", "\n").replace("\r", "\n")
+    api.upload_file(
+        path_or_fileobj=content.encode("utf-8"),
+        path_in_repo="README.md",
+        repo_id=args.repo_id,
+        repo_type="dataset",
+        token=token,
+    )
 
     console.print(f"[green]Pushed to https://huggingface.co/datasets/{args.repo_id}[/green]")
     return 0
