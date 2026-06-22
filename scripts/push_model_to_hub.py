@@ -165,7 +165,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model-dir", required=True, help="Local folder to upload.")
     p.add_argument("--repo-id", required=True, help="e.g. YOUR_HF_USERNAME/qwen3.5-2b-sql-lora")
     p.add_argument("--kind", choices=["adapter", "merged"], required=True)
-    p.add_argument("--dataset-id", default=None, help="Defaults to <repo-owner>/sql-create-context-mini")
+    p.add_argument(
+        "--dataset-id", default=None, help="Defaults to <repo-owner>/sql-create-context-mini"
+    )
     p.add_argument("--private", action="store_true")
     p.add_argument("--commit-message", default="Upload model")
     return p.parse_args()
