@@ -42,14 +42,14 @@ def patch(path: pathlib.Path, old: str, new: str, marker: str, label: str) -> No
 # 1) Skip the vision tower for text-only configs ----------------------------
 patch(
     MODELS / "qwen3_5.py",
-    old='''        with self._mark_tower_model(vllm_config, {"image", "video"}):
+    old="""        with self._mark_tower_model(vllm_config, {"image", "video"}):
             self.visual = Qwen3_VisionTransformer(
                 config.vision_config,
                 norm_eps=getattr(config, "rms_norm_eps", 1e-6),
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "visual"),
-            )''',
-    new='''        if getattr(config, "vision_config", None) is None:
+            )""",
+    new="""        if getattr(config, "vision_config", None) is None:
             self.visual = None
         else:
             with self._mark_tower_model(vllm_config, {"image", "video"}):
@@ -58,22 +58,22 @@ patch(
                     norm_eps=getattr(config, "rms_norm_eps", 1e-6),
                     quant_config=quant_config,
                     prefix=maybe_prefix(prefix, "visual"),
-                )''',
-    marker='vision_config\", None) is None',
+                )""",
+    marker='vision_config", None) is None',
     label="qwen3_5: skip vision tower",
 )
 
 # 2) Short-circuit mrope position computation for text-only requests ---------
 patch(
     MODELS / "qwen3_vl.py",
-    old='''    @staticmethod
+    old="""    @staticmethod
     def _get_mrope_input_positions(
         input_tokens: list[int],
         mm_features: list[MultiModalFeatureSpec],
         config: Qwen3VLConfig,
     ):
-        llm_pos_ids_list = []''',
-    new='''    @staticmethod
+        llm_pos_ids_list = []""",
+    new="""    @staticmethod
     def _get_mrope_input_positions(
         input_tokens: list[int],
         mm_features: list[MultiModalFeatureSpec],
@@ -84,7 +84,7 @@ patch(
                 np.arange(len(input_tokens)), (3, len(input_tokens))
             ).copy()
             return torch.from_numpy(llm_positions), 0
-        llm_pos_ids_list = []''',
+        llm_pos_ids_list = []""",
     marker="if not mm_features:",
     label="qwen3_vl: text-only mrope short-circuit",
 )
