@@ -37,6 +37,22 @@ Metrics:
 - **Exact match** — `sqlglot`-normalized string equality (strict).
 - **BLEU** — `sacrebleu` over the SQL text (surface similarity).
 
+### LoRA vs QLoRA
+
+QLoRA (base loaded in 4-bit NF4 during training, `configs/train_qlora.yaml`)
+matches plain LoRA on this benchmark — training on a quantized base costs no
+measurable quality. Both adapters are merged to bf16 and scored on the same
+200-example split.
+
+| Training | Executable acc. | Exact match | BLEU |
+|---|---:|---:|---:|
+| LoRA (bf16 base) | 87.4% | 54.0% | 86.4 |
+| QLoRA (4-bit base) | 88.9% | 57.5% | 87.5 |
+
+The gap is within noise on 200 examples; the takeaway is that QLoRA reaches the
+same accuracy at a fraction of the training VRAM. Inference speed is identical —
+both merge to a bf16 model, so the 4-bit only ever lives in the training step.
+
 ## Pipeline
 
 ```mermaid
