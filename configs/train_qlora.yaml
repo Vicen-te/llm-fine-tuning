@@ -29,11 +29,10 @@ lora:
   task_type: CAUSAL_LM
 
 train:
-  # Same path as configs/train_lora.yaml so `make merge` / `make evaluate` work
-  # without overriding ADAPTER_DIR. Pick ONE regime per run; running both back to
-  # back overwrites the earlier adapter. If you want to keep both side by side,
-  # override here (e.g. outputs/qwen3.5-2b-sql-qlora) and pass ADAPTER_DIR= to make.
-  output_dir: outputs/qwen3.5-2b-sql-lora
+  # Separate path from configs/train_lora.yaml so the two adapters live side by
+  # side and can be compared. To merge / evaluate this one, point make at it:
+  #   make merge ADAPTER_DIR=outputs/qwen3.5-2b-sql-qlora MERGED_DIR=outputs/qwen3.5-2b-sql-qlora-merged
+  output_dir: outputs/qwen3.5-2b-sql-qlora
   num_train_epochs: 3
   per_device_train_batch_size: 4
   per_device_eval_batch_size: 4

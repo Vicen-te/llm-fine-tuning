@@ -59,6 +59,7 @@ data/*.jsonl
 
 # Evaluation outputs (re-generated)
 evals/results/
+evals/results-qlora/
 evals/predictions/
 !evals/.gitkeep
 
