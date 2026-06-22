@@ -23,7 +23,7 @@ lora:
   dropout: 0.05
   # Qwen3.5-2B is MoE: the MLP *_proj live inside the experts, so an explicit
   # q/k/v/o/gate/up/down list would not resolve. all-linear lets peft discover
-  # every linear layer itself. Validated by scripts/preflight.py before a run.
+  # every linear layer itself.
   target_modules: all-linear
   bias: none
   task_type: CAUSAL_LM

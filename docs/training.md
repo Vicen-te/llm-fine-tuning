@@ -37,7 +37,7 @@ quantization block and a paged optimizer. The fields that matter:
 | `train.learning_rate` | 2e-4, cosine schedule |
 | `train.warmup_steps` | 3 (~5% of the ~57-step run) |
 | `train.loss_type` | `chunked_nll` (TRL 1.7 default, lower peak memory) |
-| `quant.load_in_4bit` | QLoRA only: NF4 double-quant on the frozen base |
+| `model.use_4bit` | QLoRA only: loads the frozen base in 4-bit NF4 (with the `bnb_4bit_*` fields) |
 
 ## Merge
 
