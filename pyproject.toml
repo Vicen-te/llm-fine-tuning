@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sql-ft"
 version = "0.1.0"
-description = "LoRA / QLoRA fine-tuning of Qwen3-1.7B for Text-to-SQL, with bitsandbytes 4-bit quantization and vLLM serving."
+description = "LoRA / QLoRA fine-tuning of Qwen3.5-2B for Text-to-SQL, with bitsandbytes 4-bit quantization and vLLM serving."
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Vicente" }]
