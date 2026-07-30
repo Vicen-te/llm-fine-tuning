@@ -13,7 +13,15 @@ make evaluate
 
 Outputs:
 - `evals/results/eval.md` / `eval.json` — the summary table.
-- `evals/results/predictions/{base,ft,ft-nf4}.jsonl` — per-example predictions.
+- `evals/results/predictions/{base,ft,ft-nf4}.jsonl` — one row per example with
+  `question`, `gold`, `pred_raw` and the cleaned `pred`.
+
+`evals/results-qlora/` holds the same report for the QLoRA adapter, produced by
+pointing `--merged-model` at `outputs/qwen3.5-2b-sql-qlora-merged`.
+
+Both directories are committed, so the reported numbers can be re-derived from
+the repo: `make data` rebuilds the same seeded eval split and `id` is the row
+index into it, which is all `eval_sql.py` needs to re-score a prediction.
 
 ## Metrics
 

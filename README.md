@@ -28,7 +28,7 @@ model. Gold-query coverage on the split is 99% (the reference SQL executes).
 | fine-tuned NF4 4-bit | 85.9% | 51.0% | 85.9 | 11786 |
 
 The 4-bit NF4 copy trades **−54% disk** (3.6 GB → 1.67 GB) for **−1.5 pts**
-executable accuracy and an unchanged BLEU. NF4 saves disk/memory, not time —
+executable accuracy and half a BLEU point. NF4 saves disk/memory, not time —
 dequantization makes per-token inference slower on a consumer GPU.
 
 Metrics:
@@ -36,6 +36,14 @@ Metrics:
   in-memory SQLite schema and compare result sets (semantic correctness).
 - **Exact match** — `sqlglot`-normalized string equality (strict).
 - **BLEU** — `sacrebleu` over the SQL text (surface similarity).
+
+Every number above is committed, not just quoted:
+[`evals/results/`](evals/results/) holds the LoRA report (`eval.md`, `eval.json`
+and the bf16-vs-NF4 `quantization.json`) and
+[`evals/results-qlora/`](evals/results-qlora/) the QLoRA one, each with the 200
+per-example generations under `predictions/` (`gold`, the raw output and the
+cleaned SQL). `id` is the row index in the eval split, so any example can be
+looked up — or re-scored — from the repo alone, no GPU needed.
 
 ### LoRA vs QLoRA
 
