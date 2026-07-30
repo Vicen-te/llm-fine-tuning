@@ -1,0 +1,37 @@
+{
+  "eval_file": "data/processed/eval.jsonl",
+  "n_examples": 200,
+  "max_new_tokens": 256,
+  "runs": [
+    {
+      "spec": {
+        "name": "base",
+        "model_id": "Qwen/Qwen3.5-2B",
+        "load_in_4bit": false
+      },
+      "metrics": {
+        "n": 200,
+        "exec_acc": 67.68,
+        "exact_match": 3.0,
+        "bleu": 59.44,
+        "gold_coverage": 99.0
+      },
+      "latency_ms_mean": 1077.5
+    },
+    {
+      "spec": {
+        "name": "ft",
+        "model_id": "outputs/qwen3.5-2b-sql-qlora-merged",
+        "load_in_4bit": false
+      },
+      "metrics": {
+        "n": 200,
+        "exec_acc": 88.89,
+        "exact_match": 57.5,
+        "bleu": 87.46,
+        "gold_coverage": 99.0
+      },
+      "latency_ms_mean": 7342.8
+    }
+  ]
+}

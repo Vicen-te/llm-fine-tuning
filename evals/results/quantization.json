@@ -1,0 +1,40 @@
+{
+  "model": "outputs/qwen3.5-2b-sql-merged",
+  "eval_file": "data/processed/eval.jsonl",
+  "n_examples": 200,
+  "disk_mb": {
+    "bf16": 3608.4,
+    "nf4": 1665.8
+  },
+  "size_reduction_pct": 53.8,
+  "latency_ms_mean": {
+    "bf16": 5645.7,
+    "nf4": 9410.0
+  },
+  "metrics": {
+    "bf16": {
+      "n": 200,
+      "exec_acc": 87.37,
+      "exact_match": 54.0,
+      "bleu": 86.35,
+      "gold_coverage": 99.0
+    },
+    "nf4": {
+      "n": 200,
+      "exec_acc": 85.86,
+      "exact_match": 51.0,
+      "bleu": 85.85,
+      "gold_coverage": 99.0
+    }
+  },
+  "quality_delta": {
+    "exec_acc": -1.51,
+    "exact_match": -3.0,
+    "bleu": -0.5
+  },
+  "generation": {
+    "max_new_tokens": 200,
+    "warmup": 2,
+    "do_sample": false
+  }
+}

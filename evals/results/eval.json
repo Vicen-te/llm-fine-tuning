@@ -1,0 +1,52 @@
+{
+  "eval_file": "data/processed/eval.jsonl",
+  "n_examples": 200,
+  "max_new_tokens": 256,
+  "runs": [
+    {
+      "spec": {
+        "name": "base",
+        "model_id": "Qwen/Qwen3.5-2B",
+        "load_in_4bit": false
+      },
+      "metrics": {
+        "n": 200,
+        "exec_acc": 67.68,
+        "exact_match": 3.0,
+        "bleu": 59.44,
+        "gold_coverage": 99.0
+      },
+      "latency_ms_mean": 1082.4
+    },
+    {
+      "spec": {
+        "name": "ft",
+        "model_id": "outputs/qwen3.5-2b-sql-merged",
+        "load_in_4bit": false
+      },
+      "metrics": {
+        "n": 200,
+        "exec_acc": 87.37,
+        "exact_match": 54.0,
+        "bleu": 86.35,
+        "gold_coverage": 99.0
+      },
+      "latency_ms_mean": 7413.2
+    },
+    {
+      "spec": {
+        "name": "ft-nf4",
+        "model_id": "outputs/qwen3.5-2b-sql-merged-nf4",
+        "load_in_4bit": true
+      },
+      "metrics": {
+        "n": 200,
+        "exec_acc": 85.86,
+        "exact_match": 51.0,
+        "bleu": 85.85,
+        "gold_coverage": 99.0
+      },
+      "latency_ms_mean": 11786.0
+    }
+  ]
+}

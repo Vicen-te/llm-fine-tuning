@@ -39,7 +39,7 @@ help:
 	@echo "  test            Run the pytest suite (CPU-only, no GPU needed)"
 	@echo "  lint            ruff check + ruff format --check"
 	@echo "  fmt             ruff format (write changes)"
-	@echo "  clean           Remove outputs/, evals/results/, __pycache__"
+	@echo "  clean           Remove outputs/, data/processed/, __pycache__"
 
 install:
 	pip install -r requirements.txt
@@ -109,4 +109,4 @@ fmt:
 	$(PY) -m ruff format src tests scripts
 
 clean:
-	$(PY) -c "import shutil, pathlib; [shutil.rmtree(d, ignore_errors=True) for d in ('outputs', 'evals/results', 'evals/predictions', 'data/processed', '.ruff_cache')]; [shutil.rmtree(c, ignore_errors=True) for c in pathlib.Path('.').rglob('__pycache__')]"
+	$(PY) -c "import shutil, pathlib; [shutil.rmtree(d, ignore_errors=True) for d in ('outputs', 'data/processed', '.ruff_cache')]; [shutil.rmtree(c, ignore_errors=True) for c in pathlib.Path('.').rglob('__pycache__')]"

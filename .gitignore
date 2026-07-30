@@ -57,12 +57,6 @@ data/raw/
 data/*.jsonl
 !data/.gitkeep
 
-# Evaluation outputs (re-generated)
-evals/results/
-evals/results-qlora/
-evals/predictions/
-!evals/.gitkeep
-
 # Logs
 *.log
 logs/
