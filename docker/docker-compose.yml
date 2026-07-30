@@ -28,9 +28,10 @@ services:
     # MODEL_ID can be a local path mounted into the container, or an HF id.
     # Default is the Hub id; override with: MODEL_ID=/models/my-model in .env
     #
-    # NOTE: runs the patched image (Dockerfile.vllm). Stock vLLM 0.23.0 routes a
-    # text-only Qwen3.5 through the multimodal Qwen3-VL path, which crashes on the
-    # missing vision_config (model build) and video_token_id (mrope) - vLLM #39231.
+    # NOTE: runs the patched image (Dockerfile.vllm). Released vLLM (<= 0.26.0)
+    # routes a text-only Qwen3.5 through the multimodal Qwen3-VL path, which
+    # crashes on the missing vision_config (model build) and video_token_id
+    # (mrope) - vLLM #39231.
     # The patch skips the vision tower and short-circuits mrope for text-only
     # input; --language-model-only then loads just the language model (correct
     # weight-prefix remap).

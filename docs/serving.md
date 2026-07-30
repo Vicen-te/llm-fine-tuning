@@ -35,7 +35,8 @@ curl -X POST http://localhost:8080/sql \
 
 ## The vLLM patch
 
-Stock vLLM 0.23 only registers the multimodal Qwen3.5 class, so a text-only
+Every released vLLM up to v0.26.0 ships the text-only Qwen3.5 model classes but
+only registers the multimodal `Qwen3_5ForConditionalGeneration`, so a text-only
 checkpoint is routed through the Qwen3-VL path and crashes on the absent
 `vision_config` (model build) and `video_token_id` (mrope) —
 [vLLM #39231](https://github.com/vllm-project/vllm/issues/39231).
@@ -43,5 +44,11 @@ checkpoint is routed through the Qwen3-VL path and crashes on the absent
 `docker/Dockerfile.vllm` builds on the official image and runs
 `docker/patch_vllm_qwen35.py`, which skips the vision tower when there is no
 `vision_config` and short-circuits the mrope position computation for text-only
-input. The model is then served with `--language-model-only`. The patch is a
-stop-gap until vLLM ships the upstream fix (PR #39316).
+input. The model is then served with `--language-model-only`.
+
+The patch is a stop-gap. Upstream added `Qwen3_5ForCausalLM` to the
+text-generation registry in
+[#50210](https://github.com/vllm-project/vllm/pull/50210), merged to `main` two
+days after v0.26.0 was cut. Once a release carries it, drop the `build:` block
+from `docker/docker-compose.yml`, use `vllm/vllm-openai` directly and remove
+`--language-model-only`.

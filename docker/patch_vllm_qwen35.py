@@ -1,6 +1,6 @@
-"""Let stock vLLM 0.23.0 serve a TEXT-ONLY Qwen3.5 checkpoint.
+"""Let a released vLLM (through v0.26.0) serve a TEXT-ONLY Qwen3.5 checkpoint.
 
-vLLM 0.23.0 only registers the multimodal Qwen3.5 classes, so a text-only
+Those releases only register the multimodal Qwen3.5 classes, so a text-only
 checkpoint is loaded through Qwen3_5ForConditionalGeneration + the Qwen3-VL
 code path. With `--language-model-only` the language model loads fine, but two
 spots in that path unconditionally read vision-only config fields that a
@@ -19,6 +19,10 @@ This patch:
      would otherwise produce, without touching any vision config field.
 
 Both are idempotent and abort loudly if an anchor is missing.
+
+Upstream registered Qwen3_5ForCausalLM as a text-generation architecture in
+vllm-project/vllm#50210, merged to main just after v0.26.0. This script is only
+needed until that reaches a release.
 """
 
 import pathlib
