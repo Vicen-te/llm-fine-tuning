@@ -7,7 +7,7 @@ Two paths share the same prompt-building code:
   Fine for batch eval; not what you'd ship to production.
 
 - `VLLMClient` — talks to a vLLM OpenAI-compatible HTTP server (the one we
-  expose in `scripts/serve_vllm.py` / `docker/Dockerfile.vllm`). This is the
+  expose in `scripts/serve_vllm.py` / `docker/docker-compose.yml`). This is the
   production serving path.
 """
 

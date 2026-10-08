@@ -33,28 +33,29 @@ curl -X POST http://localhost:8080/sql \
        "question":"Which cities have more than 1M people?"}'
 ```
 
-## The vLLM patch
+## The vLLM patch (no longer needed)
 
-Every released vLLM up to v0.26.0 ships the text-only Qwen3.5 model classes but
-only registers the multimodal `Qwen3_5ForConditionalGeneration`, so a text-only
-checkpoint is routed through the Qwen3-VL path and crashes on the absent
+The compose file now uses the stock `vllm/vllm-openai:v0.31.0` image with no
+patch and no `--language-model-only`; the merged model loads as
+`Qwen3_5ForCausalLM` and stops on `<|im_end|>`.
+
+Released vLLM up to v0.26.0 shipped the text-only Qwen3.5 model classes but only
+registered the multimodal `Qwen3_5ForConditionalGeneration`, so a text-only
+checkpoint was routed through the Qwen3-VL path and crashed on the absent
 `vision_config` (model build) and `video_token_id` (mrope) —
-[vLLM #39231](https://github.com/vllm-project/vllm/issues/39231).
+[vLLM #39231](https://github.com/vllm-project/vllm/issues/39231). Until then this
+repo built a patched image on top of the official one that skipped the vision
+tower when there was no `vision_config`, short-circuited the mrope position
+computation for text-only input and served with `--language-model-only` (the
+`Dockerfile.vllm` and `patch_vllm_qwen35.py` files remain in the git history).
 
-`docker/Dockerfile.vllm` builds on the official image and runs
-`docker/patch_vllm_qwen35.py`, which skips the vision tower when there is no
-`vision_config` and short-circuits the mrope position computation for text-only
-input. The model is then served with `--language-model-only`.
-
-The patch is a stop-gap, and the upstream fix is not this repo's work: a vLLM
-contributor added `Qwen3_5ForCausalLM` to the text-generation registry in
-[#50210](https://github.com/vllm-project/vllm/pull/50210), merged to `main` two
-days after v0.26.0 was cut. What this repo contributed is the diagnosis of the
-two crash sites above (also left as a comment on the earlier, unmerged attempt
-[#39316](https://github.com/vllm-project/vllm/pull/39316)) and the patched
-image. Once a release carries #50210, drop the `build:` block from
-`docker/docker-compose.yml`, use `vllm/vllm-openai` directly and remove
-`--language-model-only`.
+The upstream fix is not this repo's work: a vLLM contributor added
+`Qwen3_5ForCausalLM` to the text-generation registry in
+[#50210](https://github.com/vllm-project/vllm/pull/50210), first released in
+v0.27.0. What this repo contributed is the diagnosis of the two crash sites
+above (also left as a comment on the earlier, unmerged attempt
+[#39316](https://github.com/vllm-project/vllm/pull/39316)) and the patched image
+that bridged the gap.
 
 ## Stop tokens
 

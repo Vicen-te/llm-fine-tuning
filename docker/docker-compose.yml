@@ -16,10 +16,7 @@
 
 services:
   vllm:
-    build:
-      context: .
-      dockerfile: Dockerfile.vllm
-    image: sql-ft-vllm:patched
+    image: vllm/vllm-openai:v0.31.0
     container_name: sql-ft-vllm
     runtime: nvidia
     environment:
@@ -28,13 +25,9 @@ services:
     # MODEL_ID can be a local path mounted into the container, or an HF id.
     # Default is the Hub id; override with: MODEL_ID=/models/my-model in .env
     #
-    # NOTE: runs the patched image (Dockerfile.vllm). Released vLLM (<= 0.26.0)
-    # routes a text-only Qwen3.5 through the multimodal Qwen3-VL path, which
-    # crashes on the missing vision_config (model build) and video_token_id
-    # (mrope) - vLLM #39231.
-    # The patch skips the vision tower and short-circuits mrope for text-only
-    # input; --language-model-only then loads just the language model (correct
-    # weight-prefix remap).
+    # NOTE: vLLM >= 0.27.0 registers Qwen3_5ForCausalLM (vLLM #50210), so the
+    # stock image serves the text-only checkpoint as is. Releases up to 0.26.0
+    # needed a patched image; see "The vLLM patch" in docs/serving.md.
     command: >
       --model ${MODEL_ID:-YOUR_HF_USERNAME/qwen3.5-2b-sql}
       --served-model-name sql-ft
@@ -42,7 +35,6 @@ services:
       --gpu-memory-utilization 0.85
       --dtype bfloat16
       --enforce-eager
-      --language-model-only
     deploy:
       resources:
         reservations:

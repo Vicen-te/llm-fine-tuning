@@ -143,18 +143,17 @@ curl -X POST http://localhost:8080/sql \
 The wrapper rebuilds the training-time prompt and cleans the output; interactive
 docs are at `http://localhost:8080/docs`.
 
-> **vLLM note.** No released vLLM (up to v0.26.0) registers
-> `Qwen3_5ForCausalLM`, so a text-only Qwen3.5 checkpoint is routed through the
-> multimodal Qwen3-VL path and crashes
-> ([vLLM #39231](https://github.com/vllm-project/vllm/issues/39231)).
-> `docker/Dockerfile.vllm` builds a patched image (`docker/patch_vllm_qwen35.py`)
-> that skips the vision tower and serves with `--language-model-only`. The
-> upstream fix is not mine: a vLLM contributor registered the architecture in
-> [#50210](https://github.com/vllm-project/vllm/pull/50210), merged two days
-> after the v0.26.0 cut, so the patch retires with the next release. My part is
-> the diagnosis of the two crash sites (also posted on the earlier, unmerged
-> attempt [#39316](https://github.com/vllm-project/vllm/pull/39316)) and the
-> patched image.
+> **vLLM note.** The compose file serves the model with the stock
+> `vllm/vllm-openai:v0.31.0` image. Releases up to v0.26.0 did not register
+> `Qwen3_5ForCausalLM`, so a text-only Qwen3.5 checkpoint was routed through the
+> multimodal Qwen3-VL path and crashed
+> ([vLLM #39231](https://github.com/vllm-project/vllm/issues/39231)); until
+> v0.27.0 this repo served it from a patched image. The upstream fix is not mine:
+> a vLLM contributor registered the architecture in
+> [#50210](https://github.com/vllm-project/vllm/pull/50210), released in v0.27.0.
+> My part was the diagnosis of the two crash sites (also posted on the earlier,
+> unmerged attempt [#39316](https://github.com/vllm-project/vllm/pull/39316)) and
+> the patched image that bridged the gap; details in `docs/serving.md`.
 
 ## How it works
 
@@ -181,7 +180,7 @@ See [`docs/`](docs/) for per-area walkthroughs.
 configs/     LoRA / QLoRA training configs
 src/sql_ft/  prompts, data, eval metrics, inference clients
 scripts/     prepare / train / merge / quantize / evaluate / serve / push
-docker/      vLLM (patched) + API compose
+docker/      vLLM + API compose
 tests/       CPU unit tests (prompts, data, SQL metrics, stop tokens)
 docs/        training, evaluation and serving guides
 ```
