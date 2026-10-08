@@ -1,8 +1,8 @@
 """Tests for sql_ft.data — JSONL I/O and dataset construction.
 
-We don't exercise `build_sft_dataset` here because it needs a real tokenizer
-(downloads from the Hub). The chat-template formatting is implicitly covered
-by tests/test_prompts.py instead.
+`build_sft_dataset` is exercised with a fake tokenizer whose chat template
+mimics Qwen's (`<|im_end|>\\n` after every turn), so no Hub download is needed.
+The real chat-message layout is covered by tests/test_prompts.py.
 """
 
 from __future__ import annotations
@@ -10,8 +10,51 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from sql_ft.data import read_jsonl, rows_to_examples, write_jsonl
+from sql_ft.data import build_sft_dataset, read_jsonl, rows_to_examples, write_jsonl
 from sql_ft.prompts import SQLExample
+
+
+class FakeQwenTokenizer:
+    """Renders messages the way Qwen's template does: every turn closes with
+    `<|im_end|>\\n`, so the rendered text never ends on the EOS token itself."""
+
+    eos_token = "<|im_end|>"
+
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt, enable_thinking):
+        assert not tokenize and not add_generation_prompt and not enable_thinking
+        return "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
+
+
+ROWS = [
+    {
+        "schema": "CREATE TABLE t (id INT)",
+        "question": "How many?",
+        "answer": "SELECT COUNT(*) FROM t",
+    },
+    {
+        "schema": "CREATE TABLE u (name TEXT)",
+        "question": "List names",
+        "answer": "SELECT name FROM u",
+    },
+]
+
+
+def test_build_sft_dataset_ends_on_eos_token():
+    ds = build_sft_dataset(ROWS, FakeQwenTokenizer())
+    assert ds.column_names == ["text"]
+    assert len(ds) == 2
+    for text, row in zip(ds["text"], ROWS, strict=True):
+        assert text.endswith(row["answer"] + "<|im_end|>")
+        assert text.count("<|im_start|>assistant") == 1
+        assert "### Schema" in text
+
+
+def test_build_sft_dataset_has_single_trailing_eos():
+    # SFTTrainer appends eos_token to any text not ending with it; a stray
+    # newline would leave the model learning `<|im_end|>\n<|im_end|>`.
+    text = build_sft_dataset(ROWS[:1], FakeQwenTokenizer())["text"][0]
+    assert not text.endswith("\n")
+    assert text.endswith("<|im_end|>") and not text.endswith("<|im_end|>\n<|im_end|>")
 
 
 def test_write_and_read_roundtrip(tmp_path: Path):

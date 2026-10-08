@@ -47,6 +47,7 @@ from rich.console import Console
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sql_ft.data import build_sft_dataset, read_jsonl
+from sql_ft.tokens import pad_token_for
 
 load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
@@ -104,8 +105,12 @@ def main() -> int:
         trust_remote_code=model_cfg.get("trust_remote_code", False),
         use_fast=True,
     )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # The pad token must differ from EOS: TRL's collator pads labels with -100
+    # by position, but anything downstream that masks on the pad id would also
+    # drop the turn-end token the model has to learn. Qwen ships <|endoftext|>
+    # as pad and <|im_end|> as EOS; fall back to the former if pad is unset.
+    tokenizer.pad_token = pad_token_for(tokenizer)
+    console.log(f"eos = {tokenizer.eos_token!r}  pad = {tokenizer.pad_token!r}")
 
     dtype_map = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
     base_dtype = dtype_map[model_cfg.get("dtype", "bfloat16")]

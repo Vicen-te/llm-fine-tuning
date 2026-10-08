@@ -18,6 +18,7 @@ from typing import Any
 from datasets import Dataset
 
 from .prompts import SQLExample, format_for_sft
+from .tokens import ensure_eos_ending
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -57,8 +58,16 @@ def build_sft_dataset(
 
     Each `text` is the full chat (system + user + assistant) rendered with the
     model's chat template. Thinking mode is off for SQL.
+
+    The text ends on the tokenizer's EOS token, which for Qwen is the turn end
+    `<|im_end|>`. The chat template emits `<|im_end|>\\n` after the assistant
+    turn; the trailing newline is dropped so the last supervised token is the
+    stop token itself and TRL's SFTTrainer (which appends `eos_token` to any
+    text not already ending with it) does not add a second one — a model trained
+    on `SQL<|im_end|>\\n<|im_end|>` learns to continue past the turn end.
     """
     examples = rows_to_examples(rows)
+    eos = tokenizer.eos_token
     texts: list[str] = []
     for ex in examples:
         msgs = format_for_sft(ex)
@@ -68,5 +77,5 @@ def build_sft_dataset(
             add_generation_prompt=False,
             enable_thinking=enable_thinking,
         )
-        texts.append(text)
+        texts.append(ensure_eos_ending(text, eos))
     return Dataset.from_dict({"text": texts})

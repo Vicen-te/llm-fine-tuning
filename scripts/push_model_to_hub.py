@@ -72,7 +72,8 @@ messages = [
 ]
 text = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
 inputs = tok([text], return_tensors="pt").to(model.device)
-out = model.generate(**inputs, max_new_tokens=128, do_sample=False)
+# Qwen3.5-2B ships no generation_config.json, so stop on the chat turn end explicitly.
+out = model.generate(**inputs, max_new_tokens=128, do_sample=False, eos_token_id=tok.eos_token_id)
 print(tok.decode(out[0][inputs['input_ids'].shape[-1]:], skip_special_tokens=True))
 ```
 
@@ -128,6 +129,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 tok = AutoTokenizer.from_pretrained("{repo_id}")
 model = AutoModelForCausalLM.from_pretrained("{repo_id}", dtype="auto", device_map="auto")
 ```
+
+The checkpoint ships a `generation_config.json` that stops on both
+`<|im_end|>` (the chat turn end) and `<|endoftext|>`; the base model lists only
+the latter, which a fine-tune on chat-formatted targets never emits.
 
 ## Usage with vLLM
 
@@ -214,6 +219,10 @@ def main() -> int:
         repo_type="model",
         commit_message=args.commit_message,
         token=token,
+        # The trainer leaves intermediate checkpoints (with optimizer state) and
+        # TensorBoard logs in the adapter folder; only the final model belongs
+        # on the Hub.
+        ignore_patterns=["checkpoint-*", "checkpoint-*/**", "runs/**"],
     )
     console.print(f"[green]Pushed to https://huggingface.co/{args.repo_id}[/green]")
     return 0

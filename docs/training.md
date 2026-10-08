@@ -24,6 +24,21 @@ make train-qlora    # QLoRA, 4-bit   (configs/train_qlora.yaml)
 The adapter and tokenizer land in `outputs/qwen3.5-2b-sql-lora/`. Training logs
 go to TensorBoard (`report_to: tensorboard`).
 
+## End of turn
+
+Each training text is the rendered chat ending on the tokenizer's EOS token,
+`<|im_end|>` (`build_sft_dataset` strips the newline Qwen's template puts after
+it, so `SFTTrainer`, which appends `eos_token` to any text not already ending
+with it, does not add a second one). The padding token is kept distinct from
+EOS (`sql_ft.tokens.pad_token_for`), and `merge_adapter.py` writes both
+`<|im_end|>` and `<|endoftext|>` as stop ids into the merged model's
+`generation_config.json`.
+
+The first published checkpoint predates this: its targets ended on
+`<|im_end|>\n<|im_end|>` and nothing stopped generation on `<|im_end|>`, so it
+produced the SQL and then ran to `max_new_tokens`. The SQL itself was fine; the
+latency was not.
+
 ## Configs
 
 Both YAMLs share the LoRA and data blocks; the QLoRA one adds a 4-bit

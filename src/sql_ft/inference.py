@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 
 from .prompts import build_messages
+from .tokens import stop_token_ids
 
 # ---------------------------------------------------------------------------
 # Local HF inference
@@ -40,6 +41,16 @@ class GenConfig:
     repetition_penalty: float = 1.0
 
 
+@dataclass
+class Generation:
+    """One completion plus how it ended."""
+
+    text: str  # decoded new tokens, special tokens stripped
+    new_tokens: int
+    stopped: bool  # True if a stop token ended it before max_new_tokens
+    seconds: float
+
+
 class HFGenerator:
     """Lazy wrapper around a transformers model + tokenizer.
 
@@ -54,6 +65,9 @@ class HFGenerator:
         # Qwen3 chat templates expect a known pad token; reuse eos if missing.
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        # Stop on the chat turn end, not only on what the model config lists;
+        # see sql_ft.tokens for why those differ on Qwen3.5.
+        self.stop_ids = stop_token_ids(tokenizer, getattr(model, "generation_config", None))
 
     def _format(self, schema: str, question: str) -> str:
         msgs = build_messages(schema, question)
@@ -74,10 +88,11 @@ class HFGenerator:
             if was_training:
                 self.model.train()
 
-    def generate(self, schema: str, question: str, cfg: GenConfig | None = None) -> str:
-        """Generate one completion. Returns the decoded *new* tokens only."""
+    def run(self, schema: str, question: str, cfg: GenConfig | None = None) -> Generation:
+        """Generate one completion and record how it ended and how long it took."""
         import torch
 
+        t0 = time.perf_counter()
         cfg = cfg or GenConfig()
         prompt = self._format(schema, question)
         inputs = self.tokenizer([prompt], return_tensors="pt").to(self.model.device)
@@ -91,19 +106,20 @@ class HFGenerator:
                 top_p=cfg.top_p,
                 repetition_penalty=cfg.repetition_penalty,
                 pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.stop_ids,
             )
+        seconds = time.perf_counter() - t0
         new_tokens = out[0][inputs["input_ids"].shape[-1] :]
-        return self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        return Generation(
+            text=self.tokenizer.decode(new_tokens, skip_special_tokens=True),
+            new_tokens=len(new_tokens),
+            stopped=int(new_tokens[-1]) in self.stop_ids,
+            seconds=seconds,
+        )
 
-    def time_generate(
-        self, schema: str, question: str, cfg: GenConfig | None = None
-    ) -> tuple[str, float]:
-        """Same as `generate`, but also returns wall-clock seconds for the call.
-        Used by the quantization comparison to report latency.
-        """
-        t0 = time.perf_counter()
-        text = self.generate(schema, question, cfg)
-        return text, time.perf_counter() - t0
+    def generate(self, schema: str, question: str, cfg: GenConfig | None = None) -> str:
+        """Generate one completion. Returns the decoded *new* tokens only."""
+        return self.run(schema, question, cfg).text
 
 
 # ---------------------------------------------------------------------------
