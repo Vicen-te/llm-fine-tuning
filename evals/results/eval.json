@@ -12,11 +12,17 @@
       "metrics": {
         "n": 200,
         "exec_acc": 67.68,
+        "exec_acc_seeded": 42.42,
         "exact_match": 3.0,
+        "exact_match_loose": 40.0,
         "bleu": 59.44,
-        "gold_coverage": 99.0
+        "gold_coverage": 99.0,
+        "gold_nonempty": 5.56,
+        "gold_nonempty_seeded": 86.36
       },
-      "latency_ms_mean": 1082.4
+      "latency_ms_mean": 990.2,
+      "stop_rate": 99.5,
+      "new_tokens_mean": 32.6
     },
     {
       "spec": {
@@ -27,11 +33,17 @@
       "metrics": {
         "n": 200,
         "exec_acc": 87.37,
-        "exact_match": 54.0,
-        "bleu": 86.35,
-        "gold_coverage": 99.0
+        "exec_acc_seeded": 68.69,
+        "exact_match": 52.0,
+        "exact_match_loose": 72.0,
+        "bleu": 86.33,
+        "gold_coverage": 99.0,
+        "gold_nonempty": 5.56,
+        "gold_nonempty_seeded": 86.36
       },
-      "latency_ms_mean": 7413.2
+      "latency_ms_mean": 760.6,
+      "stop_rate": 100.0,
+      "new_tokens_mean": 24.6
     },
     {
       "spec": {
@@ -41,12 +53,18 @@
       },
       "metrics": {
         "n": 200,
-        "exec_acc": 85.86,
-        "exact_match": 51.0,
-        "bleu": 85.85,
-        "gold_coverage": 99.0
+        "exec_acc": 87.88,
+        "exec_acc_seeded": 68.18,
+        "exact_match": 52.5,
+        "exact_match_loose": 74.0,
+        "bleu": 86.04,
+        "gold_coverage": 99.0,
+        "gold_nonempty": 5.56,
+        "gold_nonempty_seeded": 86.36
       },
-      "latency_ms_mean": 11786.0
+      "latency_ms_mean": 1165.6,
+      "stop_rate": 100.0,
+      "new_tokens_mean": 24.7
     }
   ]
 }

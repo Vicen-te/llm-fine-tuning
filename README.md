@@ -5,8 +5,9 @@ for Text-to-SQL, with NF4 4-bit quantization, an executable-accuracy benchmark,
 and vLLM + FastAPI serving.
 
 On a held-out 200-example split the fine-tune lifts **executable accuracy from
-67.7% to 87.4%** and **exact match from 3% to 54%** over the base model, and the
-4-bit copy keeps that quality at **half the disk footprint**.
+67.7% to 87.4%** (42.4% to 68.7% on the stricter literal-seeded variant) and
+**exact match from 3% to 52%** over the base model, and the 4-bit copy keeps
+that quality at **half the disk footprint**.
 
 ## Models and data
 
@@ -21,29 +22,61 @@ On a held-out 200-example split the fine-tune lifts **executable accuracy from
 Benchmark: 200 held-out examples, greedy decoding, scored against the base
 model. Gold-query coverage on the split is 99% (the reference SQL executes).
 
-| Model | Executable acc. | Exact match | BLEU | Latency (ms/ex) |
-|---|---:|---:|---:|---:|
-| base (`Qwen3.5-2B`) | 67.7% | 3.0% | 59.4 | 1082 |
-| **fine-tuned** | **87.4%** | **54.0%** | **86.4** | 7413 |
-| fine-tuned NF4 4-bit | 85.9% | 51.0% | 85.9 | 11786 |
+| Model | Executable acc. | Exec. acc. (seeded) | Exact match | Exact match (loose) | BLEU | Latency (ms/ex) |
+|---|---:|---:|---:|---:|---:|---:|
+| base (`Qwen3.5-2B`) | 67.7% | 42.4% | 3.0% | 40.0% | 59.4 | 990 |
+| **fine-tuned** | **87.4%** | **68.7%** | **52.0%** | **72.0%** | **86.3** | 761 |
+| fine-tuned NF4 4-bit | 87.9% | 68.2% | 52.5% | 74.0% | 86.0 | 1166 |
 
-The 4-bit NF4 copy trades **−54% disk** (3.6 GB → 1.67 GB) for **−1.5 pts**
-executable accuracy and half a BLEU point. NF4 saves disk/memory, not time —
-dequantization makes per-token inference slower on a consumer GPU.
+The 4-bit NF4 copy trades **−54% disk** (3.6 GB → 1.67 GB) for half a point on
+the seeded executable accuracy and a third of a BLEU point; on 200 examples
+that is noise. NF4 saves disk/memory, not time — dequantization makes per-token
+inference slower on a consumer GPU.
 
-Metrics:
+Metrics, and what they do not measure:
 - **Executable accuracy** — run the predicted and gold SQL against the same
-  in-memory SQLite schema and compare result sets (semantic correctness).
-- **Exact match** — `sqlglot`-normalized string equality (strict).
+  in-memory SQLite schema, filled with five generic rows per table, and compare
+  result sets. Those rows never satisfy a `WHERE publisher = "Nintendo"`
+  clause: only 5.6% of the gold queries return anything, and two empty results
+  count as a match, so the plain number is close to "the prediction executes".
+- **Executable accuracy (seeded)** — same, but the rows also contain the
+  literals from the gold WHERE clause, so 86.4% of the gold queries return rows
+  and the prediction has to filter the same way. This is the number to quote.
+  Part of the gap to the plain metric is the fine-tune lower-casing literals
+  (`"nintendo"`), which the corpus does not.
+- **Exact match** — `sqlglot`-normalized string equality, strict: it keeps quote
+  style and case, and the base model writes `'Nintendo'` where the corpus writes
+  `"Nintendo"`. **Loose** folds quote style, case and whitespace away; the base
+  model's 3% → 40% shows how much of the strict gain is quoting style.
 - **BLEU** — `sacrebleu` over the SQL text (surface similarity).
+- **Latency** — mean wall-clock per example with `transformers.generate` on an
+  RTX 4070 Ti SUPER, `max_new_tokens=256`. Every fine-tuned generation stops on
+  `<|im_end|>` (stop rate 100%, base 99.5%), so the column measures the model,
+  not the token budget. The first published checkpoint did not stop — see
+  [Stop tokens](#stop-tokens).
 
 Every number above is committed, not just quoted:
 [`evals/results/`](evals/results/) holds the LoRA report (`eval.md`, `eval.json`
 and the bf16-vs-NF4 `quantization.json`) and
 [`evals/results-qlora/`](evals/results-qlora/) the QLoRA one, each with the 200
-per-example generations under `predictions/` (`gold`, the raw output and the
-cleaned SQL). `id` is the row index in the eval split, so any example can be
-looked up — or re-scored — from the repo alone, no GPU needed.
+per-example generations under `predictions/` (`gold`, the raw output, the
+cleaned SQL, the token count and whether the generation stopped). `id` is the
+row index in the eval split, so any example can be looked up — or re-scored —
+from the repo alone, no GPU needed.
+
+### Stop tokens
+
+The first published checkpoint produced correct SQL and then never stopped:
+every generation ran to `max_new_tokens`, which is why the earlier README showed
+7.4 s per example for the fine-tune against 1.1 s for the base. Two things
+lined up. `Qwen/Qwen3.5-2B` ships no `generation_config.json`, so a model
+loaded from it only stops on `<|endoftext|>`, not on the chat turn end
+`<|im_end|>`; and the SFT text ended on `<|im_end|>\n`, so `SFTTrainer`
+appended a second `<|im_end|>` and the model learned to continue past the turn
+end instead of emitting `<|endoftext|>` as the base does. The training text
+now ends on `<|im_end|>`, the merged model carries both stop ids in its
+`generation_config.json`, and the eval harness reports the stop rate. The
+numbers above, and the checkpoints on the Hub, are from the retrained model.
 
 ### LoRA vs QLoRA
 
@@ -52,14 +85,15 @@ matches plain LoRA on this benchmark — training on a quantized base costs no
 measurable quality. Both adapters are merged to bf16 and scored on the same
 200-example split.
 
-| Training | Executable acc. | Exact match | BLEU |
-|---|---:|---:|---:|
-| LoRA (bf16 base) | 87.4% | 54.0% | 86.4 |
-| QLoRA (4-bit base) | 88.9% | 57.5% | 87.5 |
+| Training | Executable acc. | Exec. acc. (seeded) | Exact match | Exact match (loose) | BLEU |
+|---|---:|---:|---:|---:|---:|
+| LoRA (bf16 base) | 87.4% | 68.7% | 52.0% | 72.0% | 86.3 |
+| QLoRA (4-bit base) | 88.4% | 71.2% | 54.0% | 72.5% | 87.0 |
 
 The gap is within noise on 200 examples; the takeaway is that QLoRA reaches the
 same accuracy at a fraction of the training VRAM. Inference speed is identical —
-both merge to a bf16 model, so the 4-bit only ever lives in the training step.
+both merge to a bf16 model, so the 4-bit only ever lives in the training step
+(761 vs 758 ms/example, both stopping on every query).
 
 ## Pipeline
 
@@ -114,10 +148,13 @@ docs are at `http://localhost:8080/docs`.
 > multimodal Qwen3-VL path and crashes
 > ([vLLM #39231](https://github.com/vllm-project/vllm/issues/39231)).
 > `docker/Dockerfile.vllm` builds a patched image (`docker/patch_vllm_qwen35.py`)
-> that skips the vision tower and serves with `--language-model-only`. Upstream
-> merged the registration in
-> [#50210](https://github.com/vllm-project/vllm/pull/50210) two days after the
-> v0.26.0 cut, so the patch retires with the next release.
+> that skips the vision tower and serves with `--language-model-only`. The
+> upstream fix is not mine: a vLLM contributor registered the architecture in
+> [#50210](https://github.com/vllm-project/vllm/pull/50210), merged two days
+> after the v0.26.0 cut, so the patch retires with the next release. My part is
+> the diagnosis of the two crash sites (also posted on the earlier, unmerged
+> attempt [#39316](https://github.com/vllm-project/vllm/pull/39316)) and the
+> patched image.
 
 ## How it works
 
@@ -126,11 +163,13 @@ docs are at `http://localhost:8080/docs`.
   template with thinking mode disabled.
 - **Data** (`src/sql_ft/data.py`, `scripts/prepare_dataset.py`) — dedup, filter
   schemas to ≤ 1500 chars, seeded 300/200 split, rendered into one SFT text
-  column.
+  column that ends on the turn-end token `<|im_end|>`.
 - **Training** (`scripts/train.py`) — `trl` `SFTTrainer`, LoRA (rank 16, α 32) on
   the linear layers, 3 epochs, bf16 (or 4-bit NF4 for QLoRA), cosine LR 2e-4.
+  `scripts/merge_adapter.py` writes `<|im_end|>` and `<|endoftext|>` as stop ids
+  into the merged model (`src/sql_ft/tokens.py`).
 - **Evaluation** (`src/sql_ft/eval_sql.py`, `scripts/evaluate.py`) — SQLite
-  executor + sqlglot + sacrebleu.
+  executor (generic and literal-seeded rows) + sqlglot + sacrebleu + stop rate.
 - **Serving** (`scripts/serve_vllm.py`, `docker/`) — vLLM OpenAI server + FastAPI
   `/sql`.
 
@@ -143,7 +182,7 @@ configs/     LoRA / QLoRA training configs
 src/sql_ft/  prompts, data, eval metrics, inference clients
 scripts/     prepare / train / merge / quantize / evaluate / serve / push
 docker/      vLLM (patched) + API compose
-tests/       CPU unit tests (prompts, data, SQL metrics)
+tests/       CPU unit tests (prompts, data, SQL metrics, stop tokens)
 docs/        training, evaluation and serving guides
 ```
 

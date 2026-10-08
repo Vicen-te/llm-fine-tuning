@@ -12,11 +12,17 @@
       "metrics": {
         "n": 200,
         "exec_acc": 67.68,
+        "exec_acc_seeded": 42.42,
         "exact_match": 3.0,
+        "exact_match_loose": 40.0,
         "bleu": 59.44,
-        "gold_coverage": 99.0
+        "gold_coverage": 99.0,
+        "gold_nonempty": 5.56,
+        "gold_nonempty_seeded": 86.36
       },
-      "latency_ms_mean": 1077.5
+      "latency_ms_mean": 962.1,
+      "stop_rate": 99.5,
+      "new_tokens_mean": 32.6
     },
     {
       "spec": {
@@ -26,12 +32,18 @@
       },
       "metrics": {
         "n": 200,
-        "exec_acc": 88.89,
-        "exact_match": 57.5,
-        "bleu": 87.46,
-        "gold_coverage": 99.0
+        "exec_acc": 88.38,
+        "exec_acc_seeded": 71.21,
+        "exact_match": 54.0,
+        "exact_match_loose": 72.5,
+        "bleu": 87.0,
+        "gold_coverage": 99.0,
+        "gold_nonempty": 5.56,
+        "gold_nonempty_seeded": 86.36
       },
-      "latency_ms_mean": 7342.8
+      "latency_ms_mean": 757.6,
+      "stop_rate": 100.0,
+      "new_tokens_mean": 24.8
     }
   ]
 }

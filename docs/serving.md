@@ -46,9 +46,21 @@ checkpoint is routed through the Qwen3-VL path and crashes on the absent
 `vision_config` and short-circuits the mrope position computation for text-only
 input. The model is then served with `--language-model-only`.
 
-The patch is a stop-gap. Upstream added `Qwen3_5ForCausalLM` to the
-text-generation registry in
+The patch is a stop-gap, and the upstream fix is not this repo's work: a vLLM
+contributor added `Qwen3_5ForCausalLM` to the text-generation registry in
 [#50210](https://github.com/vllm-project/vllm/pull/50210), merged to `main` two
-days after v0.26.0 was cut. Once a release carries it, drop the `build:` block
-from `docker/docker-compose.yml`, use `vllm/vllm-openai` directly and remove
+days after v0.26.0 was cut. What this repo contributed is the diagnosis of the
+two crash sites above (also left as a comment on the earlier, unmerged attempt
+[#39316](https://github.com/vllm-project/vllm/pull/39316)) and the patched
+image. Once a release carries #50210, drop the `build:` block from
+`docker/docker-compose.yml`, use `vllm/vllm-openai` directly and remove
 `--language-model-only`.
+
+## Stop tokens
+
+The merged checkpoint ships a `generation_config.json` listing both
+`<|im_end|>` (the chat turn end, the tokenizer's EOS) and `<|endoftext|>` as
+stop ids. Qwen3.5-2B itself ships none, so a model loaded from the base only
+stops on `<|endoftext|>`, which the fine-tune never emits; vLLM also stops on
+the tokenizer's EOS, so serving was unaffected, but a plain
+`transformers.generate` call was not (see `docs/evaluation.md`).
