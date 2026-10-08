@@ -4,7 +4,7 @@ Three numbers a deployment review will ask for:
 1. **Disk footprint**  — how much smaller the quantized model is on disk.
 2. **Latency**         — mean ms/example on the same prompts.
 3. **Quality**         — executable accuracy + exact match + BLEU on the same
-                          50-example benchmark, so degradation is visible.
+                          held-out benchmark, so degradation is visible.
 
 We also persist the 4-bit weights to `--output` (using bitsandbytes save +
 `save_pretrained`). The result is loadable later via
@@ -67,17 +67,20 @@ def _dir_size_mb(path: Path) -> float:
 
 def _generate_all(
     gen: HFGenerator, rows: list[dict[str, Any]], cfg: GenConfig
-) -> tuple[list[str], list[float]]:
-    """Run inference over every row. Returns (cleaned predictions, per-row seconds)."""
+) -> tuple[list[str], list[float], list[bool]]:
+    """Run inference over every row. Returns (cleaned predictions, per-row
+    seconds, whether each generation ended on a stop token)."""
     preds: list[str] = []
     secs: list[float] = []
+    stopped: list[bool] = []
     for i, row in enumerate(rows, 1):
-        text, dt = gen.time_generate(row["schema"], row["question"], cfg)
-        preds.append(clean_sql_output(text))
-        secs.append(dt)
+        g = gen.run(row["schema"], row["question"], cfg)
+        preds.append(clean_sql_output(g.text))
+        secs.append(g.seconds)
+        stopped.append(g.stopped)
         if i % 5 == 0 or i == len(rows):
             console.log(f"  {i:>3}/{len(rows)}  avg {sum(secs) / i:.3f}s/ex")
-    return preds, secs
+    return preds, secs, stopped
 
 
 def main() -> int:
@@ -123,7 +126,7 @@ def main() -> int:
     for _ in range(max(0, args.warmup)):
         gen.generate(rows[0]["schema"], rows[0]["question"], GenConfig(max_new_tokens=32))
 
-    preds_4bit, secs_4bit = _generate_all(gen, rows, cfg)
+    preds_4bit, secs_4bit, stopped_4bit = _generate_all(gen, rows, cfg)
     metrics_4bit = aggregate(
         [r["schema"] for r in rows],
         [r["answer"] for r in rows],
@@ -150,7 +153,7 @@ def main() -> int:
     for _ in range(max(0, args.warmup)):
         gen.generate(rows[0]["schema"], rows[0]["question"], GenConfig(max_new_tokens=32))
 
-    preds_bf16, secs_bf16 = _generate_all(gen, rows, cfg)
+    preds_bf16, secs_bf16, stopped_bf16 = _generate_all(gen, rows, cfg)
     metrics_bf16 = aggregate(
         [r["schema"] for r in rows],
         [r["answer"] for r in rows],
@@ -163,6 +166,10 @@ def main() -> int:
     def mean(xs: list[float]) -> float:
         return round(1000 * sum(xs) / max(len(xs), 1), 1)
 
+    def rate(xs: list[bool]) -> float:
+        return round(100 * sum(xs) / max(len(xs), 1), 2)
+
+    quality_keys = ("exec_acc", "exec_acc_seeded", "exact_match", "exact_match_loose", "bleu")
     report = {
         "model": str(args.model),
         "eval_file": args.eval_file,
@@ -174,12 +181,9 @@ def main() -> int:
             else None
         ),
         "latency_ms_mean": {"bf16": mean(secs_bf16), "nf4": mean(secs_4bit)},
+        "stop_rate": {"bf16": rate(stopped_bf16), "nf4": rate(stopped_4bit)},
         "metrics": {"bf16": metrics_bf16, "nf4": metrics_4bit},
-        "quality_delta": {
-            "exec_acc": round(metrics_4bit["exec_acc"] - metrics_bf16["exec_acc"], 2),
-            "exact_match": round(metrics_4bit["exact_match"] - metrics_bf16["exact_match"], 2),
-            "bleu": round(metrics_4bit["bleu"] - metrics_bf16["bleu"], 2),
-        },
+        "quality_delta": {k: round(metrics_4bit[k] - metrics_bf16[k], 2) for k in quality_keys},
         "generation": {
             "max_new_tokens": args.max_new_tokens,
             "warmup": args.warmup,
@@ -207,23 +211,18 @@ def main() -> int:
         f"{round(report['latency_ms_mean']['nf4'] - report['latency_ms_mean']['bf16'], 1)}",
     )
     t.add_row(
-        "exec_acc (%)",
-        f"{metrics_bf16['exec_acc']}",
-        f"{metrics_4bit['exec_acc']}",
-        f"{report['quality_delta']['exec_acc']:+}",
+        "stop rate (%)",
+        f"{report['stop_rate']['bf16']}",
+        f"{report['stop_rate']['nf4']}",
+        f"{round(report['stop_rate']['nf4'] - report['stop_rate']['bf16'], 2):+}",
     )
-    t.add_row(
-        "exact_match (%)",
-        f"{metrics_bf16['exact_match']}",
-        f"{metrics_4bit['exact_match']}",
-        f"{report['quality_delta']['exact_match']:+}",
-    )
-    t.add_row(
-        "BLEU",
-        f"{metrics_bf16['bleu']}",
-        f"{metrics_4bit['bleu']}",
-        f"{report['quality_delta']['bleu']:+}",
-    )
+    for key in quality_keys:
+        t.add_row(
+            key if key == "bleu" else f"{key} (%)",
+            f"{metrics_bf16[key]}",
+            f"{metrics_4bit[key]}",
+            f"{report['quality_delta'][key]:+}",
+        )
     console.print(t)
     console.log(f"report -> {args.report}")
 

@@ -1,15 +1,27 @@
 """SQL-aware evaluation metrics for Text-to-SQL.
 
-Three complementary signals, applied to every (gold, pred) pair:
+Complementary signals, applied to every (gold, pred) pair:
 
 1. **Executable accuracy** — the only metric that actually matters in
    production. We materialise the CREATE TABLE schema in an in-memory SQLite
    DB, populate it with synthetic rows derived from the column types, run both
    queries, and compare result-sets (order-agnostic by default).
 
+   Reported twice. `exec_acc` fills the tables with generic values ("alpha",
+   1, 2024-01-01 ...), so a `WHERE publisher = "Nintendo"` clause matches
+   nothing and most gold queries return an empty result; two queries that both
+   return nothing count as a match, which makes the plain number close to an
+   execution-validity rate. `exec_acc_seeded` also inserts the literals found
+   in the gold query's WHERE clause, so the gold returns rows and the prediction
+   has to filter the same way to match. `gold_nonempty` / `gold_nonempty_seeded`
+   give the share of gold queries that return something under each setup.
+
 2. **Normalized exact match** — both SQL strings are parsed and re-emitted by
-   sqlglot (which canonicalises whitespace, quoting, keyword case, and alias
-   ordering). Cheap, dialect-aware sanity check.
+   sqlglot (which canonicalises whitespace, keyword case, and alias
+   ordering). Cheap, dialect-aware sanity check. It keeps quote style and the
+   case of string literals, so `"Nintendo"` and `'nintendo'` differ;
+   `exact_match_loose` compares the same strings with quote style and case
+   folded away.
 
 3. **BLEU-4** — surface-form similarity. Useful as a "directionally improving"
    signal even when neither query executes, but not a quality gate on its own.
@@ -52,6 +64,28 @@ def normalized_exact_match(gold: str, pred: str) -> bool:
     """True iff `gold` and `pred` canonicalise to the same string."""
     g, p = _normalize(gold), _normalize(pred)
     return g is not None and p is not None and g == p
+
+
+_QUOTE_RE = re.compile(r"[\"'`]")
+_WS_RE = re.compile(r"\s+")
+
+
+def _loosen(sql: str) -> str:
+    """Canonical form with quote style, case and whitespace folded away."""
+    normalized = _normalize(sql)
+    text = normalized if normalized is not None else sql.strip().rstrip(";")
+    return _WS_RE.sub(" ", _QUOTE_RE.sub("", text)).strip().lower()
+
+
+def loose_exact_match(gold: str, pred: str) -> bool:
+    """`normalized_exact_match` that ignores quote style and case.
+
+    The corpus quotes string literals with double quotes while the base model
+    prefers single quotes, and the fine-tune lower-cases them; the strict
+    sqlglot match counts both as misses although the query shape is the same.
+    Unparseable strings fall back to the raw text.
+    """
+    return bool(_loosen(gold)) and _loosen(gold) == _loosen(pred)
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +150,78 @@ def _sample_for_column(col_type: str, idx: int, rng: random.Random) -> Any:
     return samples[idx % len(samples)]
 
 
-def _populate_sqlite(conn: sqlite3.Connection, schema: str, n_rows: int = 5, seed: int = 0) -> None:
-    """Execute CREATE TABLE statements and insert `n_rows` synthetic rows per table."""
+# `col <op> literal`, `col BETWEEN lo AND hi` and `col IN (...)` in the WHERE
+# clause of the gold query. The column may be bare, "double", `backtick` or
+# [bracket] quoted; the literal is a 'single'/"double" quoted string or a number.
+_IDENT = r'(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|([A-Za-z_][\w.]*))'
+_LITERAL = r"""(?:'([^']*)'|"([^"]*)"|(-?\d+(?:\.\d+)?))"""
+_CMP_RE = re.compile(rf"{_IDENT}\s*(?:=|<>|!=|>=|<=|>|<|\bLIKE\b)\s*{_LITERAL}", re.IGNORECASE)
+_BETWEEN_RE = re.compile(rf"{_IDENT}\s+BETWEEN\s+{_LITERAL}\s+AND\s+{_LITERAL}", re.IGNORECASE)
+_IN_RE = re.compile(rf"{_IDENT}\s+IN\s*\(([^)]*)\)", re.IGNORECASE)
+_LITERAL_RE = re.compile(_LITERAL)
+
+
+def _ident(groups: tuple[str | None, ...]) -> str:
+    """Column name from the four alternative identifier groups, lower-cased
+    and without a table qualifier."""
+    name = next(g for g in groups if g is not None)
+    return name.rsplit(".", 1)[-1].lower()
+
+
+def _literal(groups: tuple[str | None, ...]) -> Any:
+    """Python value from the three alternative literal groups."""
+    single, double, number = groups
+    if number is not None:
+        return float(number) if "." in number else int(number)
+    return single if single is not None else double
+
+
+def literals_by_column(sql: str) -> dict[str, list[Any]]:
+    """Literals the query compares each column against, in order of appearance.
+
+    Numeric literals also contribute their neighbours, so `>` / `<` filters
+    keep some rows and drop others instead of matching all or nothing.
+    """
+    found: dict[str, list[Any]] = {}
+
+    def add(col: str, value: Any) -> None:
+        values = found.setdefault(col, [])
+        candidates = [value]
+        if isinstance(value, int | float):
+            candidates += [value + 1, value - 1]
+        for v in candidates:
+            if v not in values:
+                values.append(v)
+
+    for m in _CMP_RE.finditer(sql):
+        add(_ident(m.groups()[:4]), _literal(m.groups()[4:7]))
+    for m in _BETWEEN_RE.finditer(sql):
+        col = _ident(m.groups()[:4])
+        add(col, _literal(m.groups()[4:7]))
+        add(col, _literal(m.groups()[7:10]))
+    for m in _IN_RE.finditer(sql):
+        col = _ident(m.groups()[:4])
+        for lit in _LITERAL_RE.finditer(m.group(5)):
+            add(col, _literal(lit.groups()))
+    return found
+
+
+def _populate_sqlite(
+    conn: sqlite3.Connection,
+    schema: str,
+    n_rows: int = 5,
+    seed: int = 0,
+    literals: dict[str, list[Any]] | None = None,
+) -> None:
+    """Execute CREATE TABLE statements and insert `n_rows` synthetic rows per table.
+
+    `literals` maps lower-cased column names to values that should appear in
+    that column; row `i` takes the i-th such value and the generic sample
+    otherwise, so the first rows satisfy the gold WHERE clause and the rest
+    don't.
+    """
     rng = random.Random(seed)
+    literals = literals or {}
     # Run the raw CREATE TABLEs as-is (SQLite is permissive enough).
     for stmt in schema.split(";"):
         stmt = stmt.strip()
@@ -138,7 +241,12 @@ def _populate_sqlite(conn: sqlite3.Connection, schema: str, n_rows: int = 5, see
         col_list = ",".join(f'"{c[0]}"' for c in cols)
         insert_sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
         for i in range(n_rows):
-            row = [_sample_for_column(ct, i, rng) for _, ct in cols]
+            row = [
+                literals[name.lower()][i]
+                if i < len(literals.get(name.lower(), ()))
+                else _sample_for_column(ct, i, rng)
+                for name, ct in cols
+            ]
             with contextlib.suppress(sqlite3.Error):
                 conn.execute(insert_sql, row)
     conn.commit()
@@ -172,20 +280,36 @@ class ExecResult:
     gold_ok: bool
     pred_ok: bool
     match: bool
+    gold_nonempty: bool = False
     detail: str = ""
 
 
-def executable_match(schema: str, gold: str, pred: str, n_rows: int = 5) -> ExecResult:
+def _nonempty(rows: Any) -> bool:
+    """True when a result carries information: at least one row holding a
+    value other than NULL or 0 (what COUNT/SUM/MAX return on no matching rows)."""
+    return any(cell not in (None, 0) for row in rows for cell in row)
+
+
+def executable_match(
+    schema: str, gold: str, pred: str, n_rows: int = 5, seed_literals: bool = False
+) -> ExecResult:
     """Run both queries on a freshly-populated in-memory SQLite DB.
 
     `match` is True iff both queries execute successfully AND their result-sets
     are equal. A gold query that itself fails to execute marks the example as
     unscoreable (gold_ok=False) — we still surface that so we can report
-    coverage in the final table.
+    coverage in the final table. `gold_nonempty` records whether the gold
+    returned anything (see `_nonempty`), since two empty results match
+    trivially.
+
+    With `seed_literals` the synthetic rows also contain the literals from the
+    gold WHERE clause (`literals_by_column`), so its filters select some rows
+    and a prediction only matches by filtering the same way.
     """
     conn = sqlite3.connect(":memory:")
     try:
-        _populate_sqlite(conn, schema, n_rows=n_rows)
+        literals = literals_by_column(gold) if seed_literals else None
+        _populate_sqlite(conn, schema, n_rows=n_rows, literals=literals)
         g_ok, g_rows = _run(conn, gold)
         p_ok, p_rows = _run(conn, pred)
         match = g_ok and p_ok and g_rows == p_rows
@@ -194,7 +318,13 @@ def executable_match(schema: str, gold: str, pred: str, n_rows: int = 5) -> Exec
             detail = str(p_rows)
         elif not g_ok:
             detail = f"gold failed: {g_rows}"
-        return ExecResult(gold_ok=g_ok, pred_ok=p_ok, match=match, detail=detail)
+        return ExecResult(
+            gold_ok=g_ok,
+            pred_ok=p_ok,
+            match=match,
+            gold_nonempty=g_ok and _nonempty(g_rows),
+            detail=detail,
+        )
     finally:
         conn.close()
 
@@ -216,20 +346,37 @@ def aggregate(
     assert len(schemas) == len(golds) == len(preds), "Lists must align"
     n = len(preds)
     if n == 0:
-        return {"n": 0, "exec_acc": 0.0, "exact_match": 0.0, "bleu": 0.0, "gold_coverage": 0.0}
+        return {
+            "n": 0,
+            "exec_acc": 0.0,
+            "exec_acc_seeded": 0.0,
+            "exact_match": 0.0,
+            "exact_match_loose": 0.0,
+            "bleu": 0.0,
+            "gold_coverage": 0.0,
+            "gold_nonempty": 0.0,
+            "gold_nonempty_seeded": 0.0,
+        }
 
     exec_hits = 0
+    seeded_hits = 0
     em_hits = 0
+    loose_hits = 0
     gold_scoreable = 0
+    gold_nonempty = 0
+    gold_nonempty_seeded = 0
 
     for schema, g, p in zip(schemas, golds, preds, strict=True):
         res = executable_match(schema, g, p)
+        seeded = executable_match(schema, g, p, seed_literals=True)
         if res.gold_ok:
             gold_scoreable += 1
-            if res.match:
-                exec_hits += 1
-        if normalized_exact_match(g, p):
-            em_hits += 1
+            exec_hits += res.match
+            seeded_hits += seeded.match
+            gold_nonempty += res.gold_nonempty
+            gold_nonempty_seeded += seeded.gold_nonempty
+        em_hits += normalized_exact_match(g, p)
+        loose_hits += loose_exact_match(g, p)
 
     bleu = corpus_bleu(preds, golds)
     # Denominator for exec-acc is "examples where the gold itself runs" — that's
@@ -238,9 +385,13 @@ def aggregate(
     return {
         "n": n,
         "exec_acc": round(100 * exec_hits / denom, 2),
+        "exec_acc_seeded": round(100 * seeded_hits / denom, 2),
         "exact_match": round(100 * em_hits / n, 2),
+        "exact_match_loose": round(100 * loose_hits / n, 2),
         "bleu": round(bleu, 2),
         "gold_coverage": round(100 * gold_scoreable / n, 2),
+        "gold_nonempty": round(100 * gold_nonempty / denom, 2),
+        "gold_nonempty_seeded": round(100 * gold_nonempty_seeded / denom, 2),
     }
 
 

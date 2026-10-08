@@ -19,6 +19,8 @@ from sql_ft.eval_sql import (
     clean_sql_output,
     corpus_bleu,
     executable_match,
+    literals_by_column,
+    loose_exact_match,
     normalized_exact_match,
 )
 
@@ -79,6 +81,66 @@ class TestExecutableMatch:
         # `match` is False whenever either side failed.
         assert not r.match
 
+    def test_literal_filter_is_empty_on_generic_rows(self):
+        """Generic rows never contain 'Nintendo', so both queries return
+        nothing and the plain metric counts a wrong filter as a hit."""
+        gold = "SELECT salary FROM employees WHERE name = 'Nintendo'"
+        pred = "SELECT salary FROM employees WHERE name = 'Sega'"
+        r = executable_match(SIMPLE_SCHEMA, gold, pred)
+        assert r.match and not r.gold_nonempty
+
+    def test_seeded_rows_make_literal_filter_discriminative(self):
+        gold = "SELECT salary FROM employees WHERE name = 'Nintendo'"
+        same = executable_match(SIMPLE_SCHEMA, gold, gold, seed_literals=True)
+        assert same.match and same.gold_nonempty
+        wrong = executable_match(
+            SIMPLE_SCHEMA,
+            gold,
+            "SELECT salary FROM employees WHERE name = 'Sega'",
+            seed_literals=True,
+        )
+        assert not wrong.match
+        lower = executable_match(
+            SIMPLE_SCHEMA,
+            gold,
+            "SELECT salary FROM employees WHERE name = 'nintendo'",
+            seed_literals=True,
+        )
+        assert not lower.match  # SQLite string equality is case-sensitive
+
+    def test_seeded_rows_keep_numeric_comparisons_partial(self):
+        gold = "SELECT COUNT(*) FROM employees WHERE id > 3"
+        r = executable_match(
+            SIMPLE_SCHEMA, gold, "SELECT COUNT(*) FROM employees", seed_literals=True
+        )
+        assert r.gold_nonempty and not r.match
+
+    def test_count_of_nothing_is_not_nonempty(self):
+        gold = "SELECT COUNT(*) FROM employees WHERE name = 'Nintendo'"
+        assert not executable_match(SIMPLE_SCHEMA, gold, gold).gold_nonempty
+
+
+class TestLiteralsByColumn:
+    def test_equality_and_quoting_styles(self):
+        sql = 'SELECT a FROM t WHERE "publisher" = "Nintendo" AND t.title = \'Mario\''
+        assert literals_by_column(sql) == {"publisher": ["Nintendo"], "title": ["Mario"]}
+
+    def test_numbers_get_neighbours(self):
+        assert literals_by_column("SELECT a FROM t WHERE x > 3") == {"x": [3, 4, 2]}
+        assert literals_by_column("SELECT a FROM t WHERE x >= 1.5") == {"x": [1.5, 2.5, 0.5]}
+
+    def test_between_in_and_like(self):
+        sql = "SELECT a FROM t WHERE y BETWEEN 1 AND 2 AND z IN ('p', 5) AND n LIKE '%bob%'"
+        assert literals_by_column(sql) == {
+            "y": [1, 2, 0, 3],
+            "z": ["p", 5, 6, 4],
+            "n": ["%bob%"],
+        }
+
+    def test_no_filters(self):
+        assert literals_by_column("SELECT COUNT(*) FROM t") == {}
+        assert literals_by_column("SELECT a FROM t WHERE COUNT(a) > 1") == {}
+
 
 # ---------------------------------------------------------------------------
 # normalized_exact_match
@@ -103,6 +165,36 @@ class TestNormalizedExactMatch:
     def test_unparseable_strings_dont_crash(self):
         assert not normalized_exact_match("not sql", "SELECT 1")
         assert not normalized_exact_match("", "")
+
+    def test_quote_style_and_literal_case_are_strict(self):
+        assert not normalized_exact_match(
+            'SELECT a FROM t WHERE b = "X"', "SELECT a FROM t WHERE b = 'X'"
+        )
+        assert not normalized_exact_match(
+            "SELECT a FROM t WHERE b = 'X'", "SELECT a FROM t WHERE b = 'x'"
+        )
+
+
+class TestLooseExactMatch:
+    @pytest.mark.parametrize(
+        "a,b",
+        [
+            ('SELECT a FROM t WHERE b = "Nintendo"', "SELECT a FROM t WHERE b = 'nintendo'"),
+            ("select   a from t", "SELECT a FROM t;"),
+            ("SELECT a FROM t WHERE b = `X`", "SELECT a FROM t WHERE b = 'x'"),
+        ],
+    )
+    def test_folds_quotes_case_and_whitespace(self, a, b):
+        assert loose_exact_match(a, b)
+
+    def test_still_rejects_different_queries(self):
+        assert not loose_exact_match("SELECT a FROM t", "SELECT b FROM t")
+        assert not loose_exact_match(
+            "SELECT a FROM t WHERE b = 'x'", "SELECT a FROM t WHERE b = 'y'"
+        )
+
+    def test_empty_never_matches(self):
+        assert not loose_exact_match("", "")
 
 
 # ---------------------------------------------------------------------------
@@ -156,10 +248,30 @@ class TestAggregate:
         assert out["exact_match"] == 50.0
         assert out["n"] == 2
 
+    def test_seeded_and_loose_variants(self):
+        schemas = [SIMPLE_SCHEMA] * 2
+        golds = [
+            'SELECT salary FROM employees WHERE name = "Nintendo"',
+            'SELECT salary FROM employees WHERE name = "Sega"',
+        ]
+        preds = [
+            "SELECT salary FROM employees WHERE name = 'nintendo'",  # same shape, wrong case
+            "SELECT salary FROM employees WHERE name = 'Sega'",  # equivalent
+        ]
+        out = aggregate(schemas, golds, preds)
+        assert out["exec_acc"] == 100.0  # both empty on generic rows
+        assert out["exec_acc_seeded"] == 50.0  # case mismatch returns nothing
+        assert out["exact_match"] == 0.0  # quote style differs
+        assert out["exact_match_loose"] == 100.0
+        assert out["gold_nonempty"] == 0.0
+        assert out["gold_nonempty_seeded"] == 100.0
+
     def test_empty_inputs(self):
         out = aggregate([], [], [])
         assert out["n"] == 0
         assert out["exec_acc"] == 0.0
+        assert out["exec_acc_seeded"] == 0.0
+        assert out["exact_match_loose"] == 0.0
 
 
 # ---------------------------------------------------------------------------

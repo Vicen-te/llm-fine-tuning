@@ -1,15 +1,20 @@
-"""Evaluate base vs fine-tuned (and optionally 4-bit) on the 50-example benchmark.
+"""Evaluate base vs fine-tuned (and optionally 4-bit) on the held-out benchmark.
 
 Produces three artefacts under `evals/results/`:
 
-- `eval.json`            — machine-readable summary (also uploaded with the model card).
-- `eval.md`              — Markdown table to drop into the README.
-- `predictions_<name>.jsonl` — per-example predictions for inspection.
+- `eval.json`                — machine-readable summary (also uploaded with the model card).
+- `eval.md`                  — Markdown table to drop into the README.
+- `predictions/<name>.jsonl` — per-example predictions for inspection.
 
 Metrics (all from `sql_ft.eval_sql`):
 - **Executable accuracy** — run gold + pred on an in-memory SQLite DB; compare result sets.
-- **Exact match**         — sqlglot-canonicalised string equality.
+  Reported on generic synthetic rows (`exec_acc`) and on rows seeded with the gold
+  query's literals (`exec_acc_seeded`), where the gold actually returns something.
+- **Exact match**         — sqlglot-canonicalised string equality, strict and
+  quote/case-insensitive (`exact_match_loose`).
 - **BLEU**                — sacrebleu corpus BLEU on the raw SQL strings.
+- **Stop rate**           — share of generations that ended on a stop token before
+  `max_new_tokens`; anything below 100% inflates latency.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ from rich.table import Table
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sql_ft.data import read_jsonl, write_jsonl
 from sql_ft.eval_sql import aggregate, clean_sql_output
-from sql_ft.inference import GenConfig, HFGenerator
+from sql_ft.inference import GenConfig, Generation, HFGenerator
 
 load_dotenv()  # load HF_TOKEN / HF_USERNAME from .env if present
 console = Console()
@@ -101,23 +106,24 @@ def _run_model(
     for _ in range(max(0, warmup)):
         gen.generate(rows[0]["schema"], rows[0]["question"], GenConfig(max_new_tokens=32))
 
-    preds_raw: list[str] = []
+    gens: list[Generation] = []
     preds_clean: list[str] = []
-    secs: list[float] = []
     for i, r in enumerate(rows, 1):
-        text, dt = gen.time_generate(r["schema"], r["question"], cfg)
-        preds_raw.append(text)
-        preds_clean.append(clean_sql_output(text))
-        secs.append(dt)
+        g = gen.run(r["schema"], r["question"], cfg)
+        gens.append(g)
+        preds_clean.append(clean_sql_output(g.text))
         if i % 10 == 0 or i == len(rows):
-            console.log(f"  {i:>3}/{len(rows)}  mean {sum(secs) / i:.2f}s/ex")
+            console.log(f"  {i:>3}/{len(rows)}  mean {sum(x.seconds for x in gens) / i:.2f}s/ex")
 
     metrics = aggregate(
         [r["schema"] for r in rows],
         [r["answer"] for r in rows],
         preds_clean,
     )
-    avg_latency_ms = round(1000 * sum(secs) / max(len(secs), 1), 1)
+    n = max(len(gens), 1)
+    avg_latency_ms = round(1000 * sum(g.seconds for g in gens) / n, 1)
+    stop_rate = round(100 * sum(g.stopped for g in gens) / n, 2)
+    new_tokens_mean = round(sum(g.new_tokens for g in gens) / n, 1)
 
     # Free VRAM before the next model loads.
     del model, gen
@@ -129,9 +135,19 @@ def _run_model(
         "spec": asdict(spec),
         "metrics": metrics,
         "latency_ms_mean": avg_latency_ms,
+        "stop_rate": stop_rate,
+        "new_tokens_mean": new_tokens_mean,
         "predictions": [
-            {"id": i, "question": r["question"], "gold": r["answer"], "pred_raw": pr, "pred": pc}
-            for i, (r, pr, pc) in enumerate(zip(rows, preds_raw, preds_clean, strict=True))
+            {
+                "id": i,
+                "question": r["question"],
+                "gold": r["answer"],
+                "pred_raw": g.text,
+                "pred": pc,
+                "new_tokens": g.new_tokens,
+                "stopped": g.stopped,
+            }
+            for i, (r, g, pc) in enumerate(zip(rows, gens, preds_clean, strict=True))
         ],
     }
 
@@ -144,22 +160,30 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"- Benchmark: `{report['eval_file']}` ({report['n_examples']} examples)",
         f"- Generation: greedy (do_sample=False), max_new_tokens={report['max_new_tokens']}",
         "",
-        "| Model | exec_acc % | exact_match % | BLEU | latency ms/ex |",
-        "|---|---:|---:|---:|---:|",
+        "| Model | exec_acc % | exec_acc_seeded % | exact_match % | exact_match_loose % "
+        "| BLEU | stop rate % | latency ms/ex |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in report["runs"]:
         m = r["metrics"]
         lines.append(
             f"| `{r['spec']['name']}` | "
-            f"{m['exec_acc']} | {m['exact_match']} | {m['bleu']} | "
-            f"{r['latency_ms_mean']} |"
+            f"{m['exec_acc']} | {m['exec_acc_seeded']} | "
+            f"{m['exact_match']} | {m['exact_match_loose']} | {m['bleu']} | "
+            f"{r['stop_rate']} | {r['latency_ms_mean']} |"
         )
-    lines.append("")
-    lines.append(
+    m0 = report["runs"][0]["metrics"]
+    lines += [
+        "",
         "Gold-coverage on this benchmark "
-        f"(gold queries that themselves execute): "
-        f"{report['runs'][0]['metrics']['gold_coverage']}%."
-    )
+        f"(gold queries that themselves execute): {m0['gold_coverage']}%.",
+        "",
+        f"Gold queries returning a non-empty result: {m0['gold_nonempty']}% on the generic "
+        f"synthetic rows (`exec_acc`), {m0['gold_nonempty_seeded']}% once the rows are seeded "
+        "with the gold query's literals (`exec_acc_seeded`). `exact_match_loose` ignores "
+        "quote style and case. Stop rate is the share of generations that ended on a stop "
+        "token before max_new_tokens.",
+    ]
     return "\n".join(lines)
 
 
@@ -208,16 +232,22 @@ def main() -> int:
     t = Table(title="Evaluation summary")
     t.add_column("model", style="cyan")
     t.add_column("exec_acc %", justify="right")
+    t.add_column("seeded %", justify="right")
     t.add_column("exact_match %", justify="right")
+    t.add_column("loose %", justify="right")
     t.add_column("BLEU", justify="right")
+    t.add_column("stop %", justify="right")
     t.add_column("latency ms/ex", justify="right")
     for r in runs:
         m = r["metrics"]
         t.add_row(
             r["spec"]["name"],
             str(m["exec_acc"]),
+            str(m["exec_acc_seeded"]),
             str(m["exact_match"]),
+            str(m["exact_match_loose"]),
             str(m["bleu"]),
+            str(r["stop_rate"]),
             str(r["latency_ms_mean"]),
         )
     console.print(t)
